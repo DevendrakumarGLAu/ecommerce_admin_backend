@@ -10,6 +10,7 @@ class CategoryBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=150)
     image: str | None = Field(default=None, max_length=500)
     description: str | None = None
+    is_active: bool = True
     seo_title: str | None = Field(default=None, max_length=255)
     meta_description: str | None = Field(default=None, max_length=500)
     meta_keywords: str | None = Field(default=None, max_length=500)
@@ -25,6 +26,7 @@ class CategoryUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=150)
     image: str | None = Field(default=None, max_length=500)
     description: str | None = None
+    is_active: bool | None = None
     seo_title: str | None = Field(default=None, max_length=255)
     meta_description: str | None = Field(default=None, max_length=500)
     meta_keywords: str | None = Field(default=None, max_length=500)

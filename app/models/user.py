@@ -10,6 +10,7 @@ from app.models.base import TimestampMixin, UUIDPrimaryKeyMixin
 
 
 class UserRole(str, PyEnum):
+    SUPER_ADMIN = "super_admin"
     ADMIN = "admin"
     CUSTOMER = "customer"
 

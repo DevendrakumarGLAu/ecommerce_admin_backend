@@ -72,6 +72,41 @@ class Settings(BaseSettings):
     # --- Rate limiting ---
     RATE_LIMIT_PER_MINUTE: int = 60
 
+    # --- Login captcha ---
+    CAPTCHA_EXPIRY_MINUTES: int = 5
+    CAPTCHA_LENGTH: int = 6
+
+    # --- Forgot-password OTP ---
+    OTP_EXPIRY_MINUTES: int = 5
+    OTP_RESET_TOKEN_EXPIRY_MINUTES: int = 10
+    OTP_MAX_ATTEMPTS: int = 5
+    # True echoes the OTP back in the /auth/forgot-password response, independent of
+    # whether SMTP is configured — handy while testing, but turn this off in production
+    # so the OTP is only ever delivered by email. Defaults to False now that Gmail SMTP
+    # delivery (below) is the real path; flip to True if you need to test without a
+    # working Gmail App Password on hand.
+    OTP_DEBUG_MODE: bool = False
+
+    # --- Email delivery (Gmail SMTP via App Password — no paid/third-party API) ---
+    # Swappable: this whole flow only touches app/services/email/*. To move off Gmail
+    # later, add a new EmailProvider implementation and change get_email_provider() in
+    # app/services/email/__init__.py — nothing in otp_notifier.py or the password-reset
+    # service needs to change.
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USERNAME: str = ""  # your Gmail address
+    SMTP_APP_PASSWORD: str = ""  # Gmail App Password — NOT your normal account password
+    SMTP_FROM_EMAIL: str = ""  # defaults to SMTP_USERNAME when blank
+    SMTP_FROM_NAME: str = "Firozabad Bangles"
+
+    @property
+    def smtp_configured(self) -> bool:
+        return bool(self.SMTP_USERNAME and self.SMTP_APP_PASSWORD)
+
+    @property
+    def smtp_from_address(self) -> str:
+        return self.SMTP_FROM_EMAIL or self.SMTP_USERNAME
+
     @property
     def MAX_UPLOAD_SIZE_BYTES(self) -> int:
         return self.MAX_UPLOAD_SIZE_MB * 1024 * 1024

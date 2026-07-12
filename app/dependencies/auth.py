@@ -22,8 +22,7 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Resolve authenticated user from JWT access token."""
-
+    """Resolve the authenticated user from the `Authorization: Bearer` access token."""
     if credentials is None:
         raise UnauthorizedException("Missing authentication credentials")
 
@@ -35,52 +34,37 @@ async def get_current_user(
     if payload.get("type") != TokenType.ACCESS.value:
         raise UnauthorizedException("Invalid token type")
 
+    jti = payload.get("jti")
+    if jti and await redis_client.get(f"blacklist:{jti}"):
+        raise UnauthorizedException("Token has been revoked")
+
     try:
         user_id = uuid.UUID(payload.get("sub", ""))
     except ValueError:
         raise UnauthorizedException("Invalid token payload")
 
     user = await UserRepository(db).get_by_id(user_id)
-
     if user is None:
         raise UnauthorizedException("User no longer exists")
-
     if not user.is_active:
         raise UnauthorizedException("User account is deactivated")
 
     return user
-# async def get_current_user(
-#     credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-#     db: AsyncSession = Depends(get_db),
-# ) -> User:
-#     """Resolve the authenticated user from the `Authorization: Bearer` access token."""
-#     if credentials is None:
-#         raise UnauthorizedException("Missing authentication credentials")
 
-#     try:
-#         payload = decode_token(credentials.credentials)
-#     except JWTError:
-#         raise UnauthorizedException("Invalid or expired token")
 
-#     if payload.get("type") != TokenType.ACCESS.value:
-#         raise UnauthorizedException("Invalid token type")
-
-#     jti = payload.get("jti")
-#     if jti and await redis_client.get(f"blacklist:{jti}"):
-#         raise UnauthorizedException("Token has been revoked")
-
-#     try:
-#         user_id = uuid.UUID(payload.get("sub", ""))
-#     except ValueError:
-#         raise UnauthorizedException("Invalid token payload")
-
-#     user = await UserRepository(db).get_by_id(user_id)
-#     if user is None:
-#         raise UnauthorizedException("User no longer exists")
-#     if not user.is_active:
-#         raise UnauthorizedException("User account is deactivated")
-
-#     return user
+async def get_current_user_optional(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """Like `get_current_user`, but returns None instead of raising when there's no
+    (or an invalid) bearer token — for endpoints that behave differently for
+    logged-in callers without requiring authentication outright."""
+    if credentials is None:
+        return None
+    try:
+        return await get_current_user(credentials, db)
+    except UnauthorizedException:
+        return None
 
 
 def require_roles(*roles: UserRole) -> Callable[[User], Coroutine[Any, Any, User]]:
@@ -94,4 +78,5 @@ def require_roles(*roles: UserRole) -> Callable[[User], Coroutine[Any, Any, User
     return _dependency
 
 
-require_admin = require_roles(UserRole.ADMIN)
+require_admin = require_roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+require_super_admin = require_roles(UserRole.SUPER_ADMIN)

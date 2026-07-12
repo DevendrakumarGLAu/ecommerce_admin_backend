@@ -6,11 +6,12 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
-from app.dependencies.auth import require_admin
+from app.dependencies.auth import require_admin, require_super_admin
 from app.dependencies.pagination import PaginationParams, get_pagination_params
 from app.dependencies.user_filters import UserFilterParams, get_user_filter_params
+from app.models.user import User
 from app.schemas.common import PaginatedData, SuccessResponse
-from app.schemas.user import UserResponse
+from app.schemas.user import RoleUpdateRequest, UserResponse
 from app.services.user_service import UserService
 
 router = APIRouter(prefix="/users", tags=["Users"], dependencies=[Depends(require_admin)])
@@ -62,3 +63,21 @@ async def activate_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)) 
 async def deactivate_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> SuccessResponse[UserResponse]:
     user = await UserService(db).set_active(user_id, False)
     return SuccessResponse(message="User deactivated", data=UserResponse.model_validate(user))
+
+
+@router.patch(
+    "/{user_id}/role",
+    response_model=SuccessResponse[UserResponse],
+    summary="Change a user's role (super admin only)",
+    description="Promotes or demotes a user between super_admin/admin/customer. A super admin cannot change "
+    "their own role.",
+    dependencies=[Depends(require_super_admin)],
+)
+async def update_user_role(
+    user_id: uuid.UUID,
+    payload: RoleUpdateRequest,
+    current_user: User = Depends(require_super_admin),
+    db: AsyncSession = Depends(get_db),
+) -> SuccessResponse[UserResponse]:
+    user = await UserService(db).set_role(user_id, payload.role, current_user_id=current_user.id)
+    return SuccessResponse(message="Role updated", data=UserResponse.model_validate(user))

@@ -104,7 +104,12 @@ class ProductBase(BaseModel):
     meta_description: str | None = Field(default=None, max_length=500)
     meta_keywords: str | None = Field(default=None, max_length=500)
     canonical_url: HttpUrl | None = None
-    schema_json: dict[str, Any] | None = None
+    # schema_json: dict[str, Any] | None = None
+    schema_data: dict[str, Any] | None = Field(
+    default=None,
+    validation_alias="schema_json",
+    serialization_alias="schema_json",
+)
     og_image: HttpUrl | None = None
 
     @model_validator(mode="after")
@@ -140,7 +145,12 @@ class ProductUpdate(BaseModel):
     meta_description: str | None = Field(default=None, max_length=500)
     meta_keywords: str | None = Field(default=None, max_length=500)
     canonical_url: HttpUrl | None = None
-    schema_json: dict[str, Any] | None = None
+    # schema_json: dict[str, Any] | None = None
+    schema_data: dict[str, Any] | None = Field(
+    default=None,
+    validation_alias="schema_json",
+    serialization_alias="schema_json",
+)
     og_image: HttpUrl | None = None
 
 
@@ -174,6 +184,8 @@ class ProductResponse(BaseModel):
     images: list[ProductImageResponse] = []
     videos: list[ProductVideoResponse] = []
     marketplace_links: list[MarketplaceLinkResponse] = []
+    created_by: uuid.UUID | None
+    creator_name: str | None
     created_at: datetime
     updated_at: datetime
 
@@ -196,5 +208,8 @@ class ProductSummaryResponse(BaseModel):
     new_arrival: bool
     stock_status: StockStatus
     status: ProductStatus
+    og_image: str | None
     images: list[ProductImageResponse] = []
+    created_by: uuid.UUID | None
+    creator_name: str | None
     created_at: datetime

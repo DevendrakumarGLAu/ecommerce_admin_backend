@@ -23,6 +23,7 @@ class ProductRepository(BaseRepository[Product]):
             selectinload(Product.images),
             selectinload(Product.videos),
             selectinload(Product.marketplace_links),
+            selectinload(Product.creator),
         )
 
     def _build_filter_conditions(self, filters: ProductFilterParams) -> list[ColumnElement[bool]]:
@@ -74,9 +75,14 @@ class ProductRepository(BaseRepository[Product]):
         return result.scalar_one_or_none() is not None
 
     async def list_paginated(
-        self, pagination: PaginationParams, filters: ProductFilterParams
+        self, pagination: PaginationParams, filters: ProductFilterParams, created_by: uuid.UUID | None = None
     ) -> tuple[list[Product], int]:
         conditions = self._build_filter_conditions(filters)
+        if created_by is not None:
+            # Scope to the caller's own products, but also surface legacy rows created
+            # before per-admin ownership existed (created_by is NULL) so they don't
+            # silently vanish from every admin's product list.
+            conditions.append(or_(Product.created_by.is_(None), Product.created_by == created_by))
 
         stmt = self._base_query()
         if filters.category_slug:

@@ -26,7 +26,7 @@ class CartItemProduct(BaseModel):
     slug: str
     price: Decimal
     sale_price: Decimal | None
-    image: str | None = None
+    og_image: str | None
     stock_status: str
 
 

@@ -30,10 +30,14 @@ class CategoryRepository(BaseRepository[Category]):
         result = await self.db.execute(stmt)
         return result.scalar_one_or_none() is not None
 
-    async def list_paginated(self, pagination: PaginationParams, search: str | None) -> tuple[list[Category], int]:
+    async def list_paginated(
+        self, pagination: PaginationParams, search: str | None, is_active: bool | None = None
+    ) -> tuple[list[Category], int]:
         conditions = [Category.deleted_at.is_(None)]
         if search:
             conditions.append(or_(Category.name.ilike(f"%{search}%"), Category.description.ilike(f"%{search}%")))
+        if is_active is not None:
+            conditions.append(Category.is_active.is_(is_active))
 
         sort_column = self.resolve_sort_column(pagination.sort, _SORTABLE_FIELDS)
         order_fn = sort_column.asc() if pagination.order == "asc" else sort_column.desc()

@@ -10,6 +10,11 @@ and `alembic upgrade head` have been run against a working DATABASE_URL):
     python scripts/seed_admin.py
     python scripts/seed_admin.py --email me@example.com --password "MyPassword123" --first-name Jane --last-name Doe
 
+Bootstrapping the first super admin (needed to promote/manage other admins from
+the Users screen — there's no way to create one via the API):
+
+    python scripts/seed_admin.py --role super_admin --email owner@example.com --password "MyPassword123"
+
 Safe to re-run: if the email already exists, it just reports that instead of
 creating a duplicate.
 """
@@ -30,7 +35,7 @@ DEFAULT_EMAIL = "admin@firozabadbangles.com"
 DEFAULT_PASSWORD = "Admin@12345"
 
 
-async def seed_admin(email: str, password: str, first_name: str, last_name: str) -> None:
+async def seed_admin(email: str, password: str, first_name: str, last_name: str, role: UserRole) -> None:
     async with AsyncSessionLocal() as db:
         users = UserRepository(db)
 
@@ -45,12 +50,12 @@ async def seed_admin(email: str, password: str, first_name: str, last_name: str)
             email=email,
             phone=None,
             password_hash=hash_password(password),
-            role=UserRole.ADMIN,
+            role=role,
             is_active=True,
         )
         await users.commit()
 
-        print("Admin account created:")
+        print(f"{role.value.replace('_', ' ').title()} account created:")
         print(f"  Email:    {email}")
         print(f"  Password: {password}")
 
@@ -61,9 +66,10 @@ def main() -> None:
     parser.add_argument("--password", default=DEFAULT_PASSWORD)
     parser.add_argument("--first-name", default="Admin")
     parser.add_argument("--last-name", default="User")
+    parser.add_argument("--role", choices=["admin", "super_admin"], default="admin")
     args = parser.parse_args()
 
-    asyncio.run(seed_admin(args.email, args.password, args.first_name, args.last_name))
+    asyncio.run(seed_admin(args.email, args.password, args.first_name, args.last_name, UserRole(args.role)))
 
 
 if __name__ == "__main__":

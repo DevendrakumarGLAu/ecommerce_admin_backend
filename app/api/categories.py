@@ -23,10 +23,11 @@ router = APIRouter(prefix="/categories", tags=["Categories"])
 )
 async def list_categories(
     search: str | None = Query(default=None, description="Search by category name or description"),
+    is_active: bool | None = Query(default=None, description="Filter by active/paused state"),
     pagination: PaginationParams = Depends(get_pagination_params),
     db: AsyncSession = Depends(get_db),
 ) -> SuccessResponse[PaginatedData[CategoryResponse]]:
-    result = await CategoryService(db).list_categories(pagination, search)
+    result = await CategoryService(db).list_categories(pagination, search, is_active=is_active)
     return SuccessResponse(data=result)
 
 

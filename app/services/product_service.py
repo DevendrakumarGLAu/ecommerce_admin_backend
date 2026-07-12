@@ -13,6 +13,7 @@ from app.models.product import Product
 from app.models.product_image import ProductImage
 from app.models.product_marketplace_link import ProductMarketplaceLink
 from app.models.product_video import ProductVideo
+from app.models.user import User, UserRole
 from app.repositories.category_repository import CategoryRepository
 from app.repositories.product_image_repository import ProductImageRepository
 from app.repositories.product_marketplace_link_repository import ProductMarketplaceLinkRepository
@@ -29,7 +30,7 @@ from app.schemas.product import (
 )
 from app.services import cache_service
 from app.services.upload_service import UploadService
-from app.utils.exceptions import ConflictException, NotFoundException
+from app.utils.exceptions import ConflictException, ForbiddenException, NotFoundException
 from app.utils.slug import build_candidate_slug, generate_slug
 
 _URL_FIELDS = ("canonical_url", "og_image")
@@ -63,7 +64,17 @@ class ProductService:
                 data[field] = str(data[field])
         return data
 
-    async def create(self, payload: ProductCreate) -> Product:
+    @staticmethod
+    def _ensure_owner(product: Product, current_user: User) -> None:
+        """Super admins can manage any product. Regular admins can only manage
+        their own products — except legacy products with no owner (created
+        before per-admin ownership existed), which anyone may still edit."""
+        if current_user.role == UserRole.SUPER_ADMIN:
+            return
+        if product.created_by is not None and product.created_by != current_user.id:
+            raise ForbiddenException("You can only manage products you created")
+
+    async def create(self, payload: ProductCreate, created_by: uuid.UUID) -> Product:
         """Create a product after validating category existence and SKU uniqueness."""
         category = await self.categories.get_by_id_active(payload.category_id)
         if category is None:
@@ -75,18 +86,23 @@ class ProductService:
         slug = await self._generate_unique_slug(payload.title)
         data = self._stringify_urls(payload.model_dump(exclude={"category_id"}))
 
-        product = await self.products.create(category_id=payload.category_id, slug=slug, **data)
+        product = await self.products.create(category_id=payload.category_id, slug=slug, created_by=created_by, **data)
         await self.products.commit()
         await cache_service.invalidate_products_cache()
         return await self.products.get_by_id_active(product.id)
 
-    async def update(self, product_id: uuid.UUID, payload: ProductUpdate) -> Product:
+    async def update(self, product_id: uuid.UUID, payload: ProductUpdate, current_user: User) -> Product:
         """Partially update a product, regenerating the slug only if `title` changed."""
         product = await self.products.get_by_id_active(product_id)
         if product is None:
             raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
 
         update_data = payload.model_dump(exclude_unset=True)
+        if product.created_by is None and current_user.role != UserRole.SUPER_ADMIN:
+            # First regular admin to touch an unclaimed legacy product becomes its
+            # owner. Super admins editing on someone else's behalf don't claim it.
+            update_data["created_by"] = current_user.id
 
         if "category_id" in update_data:
             category = await self.categories.get_by_id_active(update_data["category_id"])
@@ -110,11 +126,12 @@ class ProductService:
         await cache_service.invalidate_products_cache()
         return await self.products.get_by_id_active(product_id)
 
-    async def delete(self, product_id: uuid.UUID) -> None:
+    async def delete(self, product_id: uuid.UUID, current_user: User) -> None:
         """Soft-delete a product."""
         product = await self.products.get_by_id_active(product_id)
         if product is None:
             raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
 
         await self.products.update(product, deleted_at=datetime.now(timezone.utc))
         await self.products.commit()
@@ -133,7 +150,7 @@ class ProductService:
         return product
 
     async def list_products(
-        self, pagination: PaginationParams, filters: ProductFilterParams
+        self, pagination: PaginationParams, filters: ProductFilterParams, created_by: uuid.UUID | None = None
     ) -> PaginatedData[ProductSummaryResponse]:
         """List products with search/filter/sort support, cached per unique query."""
         schema = PaginatedData[ProductSummaryResponse]
@@ -141,14 +158,14 @@ class ProductService:
         filter_signature = "|".join(
 f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         cache_key = cache_service.build_products_list_key(
-            f"{pagination.page}:{pagination.limit}:{pagination.sort}:{pagination.order}:{filter_signature}"
+            f"{pagination.page}:{pagination.limit}:{pagination.sort}:{pagination.order}:{filter_signature}:{created_by or ''}"
         )
 
         cached = await cache_service.get_cached(cache_key)
         if cached is not None:
             return schema.model_validate(cached)
 
-        items, total = await self.products.list_paginated(pagination, filters)
+        items, total = await self.products.list_paginated(pagination, filters, created_by=created_by)
         result = schema.build(
             items=[ProductSummaryResponse.model_validate(item) for item in items],
             page=pagination.page,
@@ -158,11 +175,12 @@ f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         await cache_service.set_cached(cache_key, result.model_dump(mode="json"))
         return result
 
-    async def add_image(self, product_id: uuid.UUID, payload: ProductImageCreate) -> ProductImage:
+    async def add_image(self, product_id: uuid.UUID, payload: ProductImageCreate, current_user: User) -> ProductImage:
         """Attach an already-uploaded image (see UploadService) to a product."""
         product = await self.products.get_by_id_active(product_id)
         if product is None:
             raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
 
         image = await self.images.create(
             product_id=product_id,
@@ -174,8 +192,13 @@ f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         await cache_service.invalidate_products_cache()
         return image
 
-    async def remove_image(self, product_id: uuid.UUID, image_id: uuid.UUID) -> None:
+    async def remove_image(self, product_id: uuid.UUID, image_id: uuid.UUID, current_user: User) -> None:
         """Detach and permanently delete a product image, including its storage object."""
+        product = await self.products.get_by_id_active(product_id)
+        if product is None:
+            raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
+
         image = await self.images.get_by_id(image_id)
         if image is None or image.product_id != product_id:
             raise NotFoundException("Product image not found")
@@ -186,11 +209,12 @@ f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         await self.upload_service.delete_file(image_url)
         await cache_service.invalidate_products_cache()
 
-    async def add_video(self, product_id: uuid.UUID, payload: ProductVideoCreate) -> ProductVideo:
+    async def add_video(self, product_id: uuid.UUID, payload: ProductVideoCreate, current_user: User) -> ProductVideo:
         """Attach an already-uploaded video (see UploadService) to a product."""
         product = await self.products.get_by_id_active(product_id)
         if product is None:
             raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
 
         video = await self.videos.create(
             product_id=product_id,
@@ -203,8 +227,13 @@ f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         await cache_service.invalidate_products_cache()
         return video
 
-    async def remove_video(self, product_id: uuid.UUID, video_id: uuid.UUID) -> None:
+    async def remove_video(self, product_id: uuid.UUID, video_id: uuid.UUID, current_user: User) -> None:
         """Detach and permanently delete a product video, including its storage object."""
+        product = await self.products.get_by_id_active(product_id)
+        if product is None:
+            raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
+
         video = await self.videos.get_by_id(video_id)
         if video is None or video.product_id != product_id:
             raise NotFoundException("Product video not found")
@@ -216,12 +245,13 @@ f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         await cache_service.invalidate_products_cache()
 
     async def add_marketplace_link(
-        self, product_id: uuid.UUID, payload: MarketplaceLinkCreate
+        self, product_id: uuid.UUID, payload: MarketplaceLinkCreate, current_user: User
     ) -> ProductMarketplaceLink:
         """Attach a "buy it here" link (Amazon, Flipkart, Meesho, etc.) to a product."""
         product = await self.products.get_by_id_active(product_id)
         if product is None:
             raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
 
         link = await self.marketplace_links.create(
             product_id=product_id,
@@ -234,8 +264,13 @@ f"{k}={v}" for k, v in sorted(asdict(filters).items()))
         await cache_service.invalidate_products_cache()
         return link
 
-    async def remove_marketplace_link(self, product_id: uuid.UUID, link_id: uuid.UUID) -> None:
+    async def remove_marketplace_link(self, product_id: uuid.UUID, link_id: uuid.UUID, current_user: User) -> None:
         """Detach a marketplace link from a product."""
+        product = await self.products.get_by_id_active(product_id)
+        if product is None:
+            raise NotFoundException("Product not found")
+        self._ensure_owner(product, current_user)
+
         link = await self.marketplace_links.get_by_id(link_id)
         if link is None or link.product_id != product_id:
             raise NotFoundException("Marketplace link not found")

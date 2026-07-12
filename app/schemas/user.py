@@ -32,3 +32,9 @@ class ProfileUpdateRequest(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     phone: str | None = Field(default=None, max_length=20)
     avatar_url: str | None = Field(default=None, max_length=500)
+
+
+class RoleUpdateRequest(BaseModel):
+    """Super-admin-only payload to change another user's role."""
+
+    role: UserRole

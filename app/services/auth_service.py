@@ -16,10 +16,11 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
-from app.models.user import User
+from app.models.user import User, UserRole
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import ChangePasswordRequest, LoginRequest, RegisterRequest, TokenResponse
 from app.schemas.user import ProfileUpdateRequest
+from app.services import captcha_service
 from app.utils.exceptions import BadRequestException, ConflictException, UnauthorizedException
 
 
@@ -45,8 +46,37 @@ class AuthService:
         await self.users.commit()
         return user
 
+    async def register_admin(self, payload: RegisterRequest) -> TokenResponse:
+        """Create a new admin account and immediately issue a token pair (signup + auto-login).
+
+        Used only by the admin panel's signup screen — the public buyer-facing
+        `register()` above always creates a customer account and never touches
+        this. There's no invite/approval step yet; anyone with access to the
+        admin panel's signup form can create an admin account.
+        """
+        if await self.users.email_exists(payload.email):
+            raise ConflictException("An account with this email already exists")
+
+        user = await self.users.create(
+            first_name=payload.first_name,
+            last_name=payload.last_name,
+            email=payload.email,
+            phone=payload.phone,
+            password_hash=hash_password(payload.password),
+            role=UserRole.ADMIN,
+        )
+        await self.users.commit()
+        return self._issue_tokens(user)
+
     async def login(self, payload: LoginRequest) -> TokenResponse:
-        """Validate credentials and issue a fresh access/refresh token pair."""
+        """Verify the captcha, then validate credentials and issue a fresh token pair.
+
+        Captcha is checked first: it's single-use and cheap (no DB hit), so a
+        bad captcha never wastes a lookup against the users table, and — same
+        as a bad password — never reveals whether the email exists.
+        """
+        await captcha_service.verify(payload.captcha_id, payload.captcha_text)
+
         user = await self.users.get_by_email(payload.email)
         if user is None or not verify_password(payload.password, user.password_hash):
             raise UnauthorizedException("Invalid email or password")

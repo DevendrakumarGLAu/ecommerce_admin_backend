@@ -5,6 +5,7 @@ from decimal import Decimal
 from enum import Enum as PyEnum
 
 from sqlalchemy import Boolean, Column, Enum, ForeignKey, Numeric, String, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, Numeric, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -13,17 +14,16 @@ from app.core.database import Base
 from app.models.base import SoftDeleteMixin, TimestampMixin, UUIDPrimaryKeyMixin
 
 
+class StockStatus(str, PyEnum):
+    IN_STOCK = "in_stock"
+    OUT_OF_STOCK = "out_of_stock"
+    PREORDER = "preorder"
+
 
 class ProductStatus(str, PyEnum):
     DRAFT = "draft"
     PUBLISHED = "published"
     ARCHIVED = "archived"
-
-
-class StockStatus(str, PyEnum):
-    IN_STOCK = "in_stock"
-    OUT_OF_STOCK = "out_of_stock"
-    PREORDER = "preorder"
 
 
 class Product(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
@@ -33,6 +33,9 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
 
     category_id: Mapped[uuid.UUID] = mapped_column(
         PG_UUID(as_uuid=True), ForeignKey("categories.id", ondelete="RESTRICT"), index=True, nullable=False
+    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        PG_UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True, nullable=True
     )
 
     title: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
@@ -81,6 +84,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     og_image: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     category: Mapped["Category"] = relationship(back_populates="products")
+    creator: Mapped["User | None"] = relationship(foreign_keys=[created_by])
     images: Mapped[list["ProductImage"]] = relationship(
         back_populates="product", cascade="all, delete-orphan", order_by="ProductImage.display_order"
     )
@@ -98,3 +102,7 @@ class Product(UUIDPrimaryKeyMixin, TimestampMixin, SoftDeleteMixin, Base):
     @property
     def category_slug(self) -> str:
         return self.category.slug
+
+    @property
+    def creator_name(self) -> str | None:
+        return self.creator.full_name if self.creator else None

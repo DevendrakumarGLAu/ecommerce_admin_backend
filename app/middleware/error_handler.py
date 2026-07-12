@@ -6,6 +6,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.core.config import settings
 from app.core.logging import get_logger
 from app.utils.exceptions import AppException
 from app.utils.response import error_payload
@@ -42,6 +43,18 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(Exception)
     async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
         logger.exception("Unhandled server exception", extra={"path": request.url.path})
+        
+        if settings.DEBUG:
+            import traceback
+            tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            return JSONResponse(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                content=error_payload(
+                    message=f"Internal Server Error: {str(exc)}",
+                    errors={"traceback": tb, "exception_type": type(exc).__name__}
+                ),
+            )
+            
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=error_payload("Internal server error"),

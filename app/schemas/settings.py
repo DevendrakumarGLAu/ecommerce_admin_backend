@@ -9,6 +9,9 @@ class SettingsUpdate(BaseModel):
     site_name: str | None = Field(default=None, max_length=150)
     logo: str | None = Field(default=None, max_length=500)
     favicon: str | None = Field(default=None, max_length=500)
+    hero_banner_url: str | None = Field(default=None, max_length=500)
+    hero_banner_title: str | None = Field(default=None, max_length=200)
+    hero_banner_subtitle: str | None = Field(default=None, max_length=500)
     support_email: EmailStr | None = None
     support_phone: str | None = Field(default=None, max_length=20)
     facebook: str | None = Field(default=None, max_length=500)
@@ -25,6 +28,9 @@ class SettingsResponse(BaseModel):
     site_name: str | None
     logo: str | None
     favicon: str | None
+    hero_banner_url: str | None
+    hero_banner_title: str | None
+    hero_banner_subtitle: str | None
     support_email: str | None
     support_phone: str | None
     facebook: str | None

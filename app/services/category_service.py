@@ -76,18 +76,20 @@ class CategoryService:
             raise NotFoundException("Category not found")
         return category
 
-    async def list_categories(self, pagination: PaginationParams, search: str | None) -> PaginatedData[CategoryResponse]:
+    async def list_categories(
+        self, pagination: PaginationParams, search: str | None, is_active: bool | None = None
+    ) -> PaginatedData[CategoryResponse]:
         """List categories with Redis caching, keyed by the full query signature."""
         schema = PaginatedData[CategoryResponse]
         cache_key = cache_service.build_categories_list_key(
-            f"{pagination.page}:{pagination.limit}:{pagination.sort}:{pagination.order}:{search or ''}"
+            f"{pagination.page}:{pagination.limit}:{pagination.sort}:{pagination.order}:{search or ''}:{is_active}"
         )
 
         cached = await cache_service.get_cached(cache_key)
         if cached is not None:
             return schema.model_validate(cached)
 
-        items, total = await self.categories.list_paginated(pagination, search)
+        items, total = await self.categories.list_paginated(pagination, search, is_active=is_active)
         result = schema.build(
             items=[CategoryResponse.model_validate(item) for item in items],
             page=pagination.page,
