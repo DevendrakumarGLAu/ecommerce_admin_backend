@@ -178,7 +178,11 @@ class ProductResponse(BaseModel):
     meta_description: str | None
     meta_keywords: str | None
     canonical_url: str | None
-    schema_json: dict[str, Any] | None
+    schema_data: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias="schema_json",
+        serialization_alias="schema_json",
+    )
     image: str | None = None
 
     images: list[ProductImageResponse] = []

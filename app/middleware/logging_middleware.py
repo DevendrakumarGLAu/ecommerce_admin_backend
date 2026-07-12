@@ -22,7 +22,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
         try:
             response = await call_next(request)
-        except Exception:
+        except Exception as exc:
             duration_ms = round((time.perf_counter() - start) * 1000, 2)
             logger.exception(
                 "Unhandled exception while processing request",
@@ -33,7 +33,26 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
                     "duration_ms": duration_ms,
                 },
             )
-            raise
+            from app.core.config import settings
+            from app.middleware.error_handler import CORSResponse
+            from app.utils.response import error_payload
+            import traceback
+
+            if settings.DEBUG:
+                tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+                return CORSResponse(
+                    request,
+                    status_code=500,
+                    content=error_payload(
+                        message=f"Internal Server Error: {str(exc)}",
+                        errors={"traceback": tb, "exception_type": type(exc).__name__}
+                    ),
+                )
+            return CORSResponse(
+                request,
+                status_code=500,
+                content=error_payload("Internal server error"),
+            )
 
         duration_ms = round((time.perf_counter() - start) * 1000, 2)
         log = logger.warning if response.status_code >= 400 else logger.info

@@ -84,7 +84,7 @@ class ProductService:
             raise ConflictException("A product with this SKU already exists")
 
         slug = await self._generate_unique_slug(payload.title)
-        data = self._stringify_urls(payload.model_dump(exclude={"category_id"}))
+        data = self._stringify_urls(payload.model_dump(by_alias=True, exclude={"category_id"}))
 
         product = await self.products.create(category_id=payload.category_id, slug=slug, created_by=created_by, **data)
         await self.products.commit()
@@ -98,7 +98,7 @@ class ProductService:
             raise NotFoundException("Product not found")
         self._ensure_owner(product, current_user)
 
-        update_data = payload.model_dump(exclude_unset=True)
+        update_data = payload.model_dump(by_alias=True, exclude_unset=True)
         if product.created_by is None and current_user.role != UserRole.SUPER_ADMIN:
             # First regular admin to touch an unclaimed legacy product becomes its
             # owner. Super admins editing on someone else's behalf don't claim it.

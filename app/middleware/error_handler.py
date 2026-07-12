@@ -14,6 +14,16 @@ from app.utils.response import error_payload
 logger = get_logger("app.errors")
 
 
+def CORSResponse(request: Request, status_code: int, content: dict) -> JSONResponse:
+    """Helper to return JSONResponse with standard CORS headers if origin is present."""
+    headers = {}
+    origin = request.headers.get("origin")
+    if origin:
+        headers["Access-Control-Allow-Origin"] = origin
+        headers["Access-Control-Allow-Credentials"] = "true"
+    return JSONResponse(status_code=status_code, content=content, headers=headers)
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Attach all global exception handlers to the FastAPI app."""
 
@@ -23,13 +33,14 @@ def register_exception_handlers(app: FastAPI) -> None:
             "Handled application exception",
             extra={"path": request.url.path, "status_code": exc.status_code, "error_message": exc.message},
         )
-        return JSONResponse(status_code=exc.status_code, content=error_payload(exc.message, exc.errors))
+        return CORSResponse(request, status_code=exc.status_code, content=error_payload(exc.message, exc.errors))
 
     @app.exception_handler(RequestValidationError)
     async def handle_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
         errors = jsonable_encoder(exc.errors())
         logger.warning("Request validation failed", extra={"path": request.url.path, "validation_errors": errors})
-        return JSONResponse(
+        return CORSResponse(
+            request,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             content=error_payload("Validation error", errors),
         )
@@ -38,7 +49,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     async def handle_http_exception(request: Request, exc: StarletteHTTPException) -> JSONResponse:
         if exc.status_code == status.HTTP_401_UNAUTHORIZED:
             logger.warning("Authentication failure", extra={"path": request.url.path})
-        return JSONResponse(status_code=exc.status_code, content=error_payload(str(exc.detail)))
+        return CORSResponse(request, status_code=exc.status_code, content=error_payload(str(exc.detail)))
 
     @app.exception_handler(Exception)
     async def handle_unexpected_exception(request: Request, exc: Exception) -> JSONResponse:
@@ -47,7 +58,8 @@ def register_exception_handlers(app: FastAPI) -> None:
         if settings.DEBUG:
             import traceback
             tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-            return JSONResponse(
+            return CORSResponse(
+                request,
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 content=error_payload(
                     message=f"Internal Server Error: {str(exc)}",
@@ -55,7 +67,8 @@ def register_exception_handlers(app: FastAPI) -> None:
                 ),
             )
             
-        return JSONResponse(
+        return CORSResponse(
+            request,
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content=error_payload("Internal server error"),
         )

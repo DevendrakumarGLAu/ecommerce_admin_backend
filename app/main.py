@@ -16,7 +16,41 @@ from app.middleware.logging_middleware import RequestLoggingMiddleware
 from app.middleware.rate_limit import RateLimitMiddleware
 from app.schemas.common import SuccessResponse
 
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
+
 logger = get_logger("app.lifecycle")
+
+
+class ExceptionCORSHandlingMiddleware(BaseHTTPMiddleware):
+    """Catch-all middleware to handle any exceptions and format them as CORS JSON responses."""
+
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            # Import dynamically to avoid circular dependencies
+            from app.middleware.error_handler import CORSResponse
+            from app.utils.response import error_payload
+            import traceback
+
+            logger.exception("Unhandled middleware-level exception", extra={"path": request.url.path})
+            if settings.DEBUG:
+                tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+                return CORSResponse(
+                    request,
+                    status_code=500,
+                    content=error_payload(
+                        message=f"Internal Server Error: {str(exc)}",
+                        errors={"traceback": tb, "exception_type": type(exc).__name__}
+                    ),
+                )
+            return CORSResponse(
+                request,
+                status_code=500,
+                content=error_payload("Internal server error"),
+            )
 
 
 @asynccontextmanager
@@ -43,6 +77,7 @@ register_exception_handlers(app)
 
 app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(RateLimitMiddleware)
+app.add_middleware(ExceptionCORSHandlingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
