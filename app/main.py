@@ -96,7 +96,9 @@ app.include_router(uploads.router, prefix=settings.API_V1_PREFIX)
 app.include_router(settings_router.router, prefix=settings.API_V1_PREFIX)
 app.include_router(users.router, prefix=settings.API_V1_PREFIX)
 
-
+@app.get("/")
+def root():
+    return {"message": "API is running"}
 @app.get(
     "/health",
     response_model=SuccessResponse[dict],
