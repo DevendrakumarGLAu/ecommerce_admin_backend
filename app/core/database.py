@@ -37,3 +37,10 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
             raise
         finally:
             await session.close()
+            
+from sqlalchemy.engine import make_url
+
+url = make_url(settings.DATABASE_URL)
+print("Host:", url.host)
+print("Port:", url.port)
+print("DB:", url.database)
