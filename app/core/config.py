@@ -53,7 +53,7 @@ class Settings(BaseSettings):
     # Comma-separated list of allowed origins, e.g. "http://localhost:4200,http://localhost:4500".
     # Defaults cover Angular's standard dev port plus the alternate port used during local testing.
     # FRONTEND_URL: str = "http://localhost:4200,http://localhost:4500"
-    FRONTEND_URL:str = "https://banglesbazaar.onrender.com"
+    FRONTEND_URL:str
 
     # --- File upload ---
     MAX_UPLOAD_SIZE_MB: int = 5
